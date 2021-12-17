@@ -1,4 +1,6 @@
 .ipynb_checkpoints/
-data/
 *.pyc
 *.pdf
+*.zip
+*.gz
+model_cache/
