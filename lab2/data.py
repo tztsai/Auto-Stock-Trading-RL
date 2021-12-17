@@ -4,20 +4,14 @@ import gzip
 import zipfile
 import requests
 import pandas as pd
+from typing import List, Union
+from torch.utils.data import DataLoader
+from sentence_transformers.readers import InputExample
 
 STS_URL = "https://sbert.net/datasets/stsbenchmark.tsv.gz"
 SNLI_URL = "https://nlp.stanford.edu/projects/snli/snli_1.0.zip"
 MULTINLI_URL = "https://cims.nyu.edu/~sbowman/multinli/multinli_1.0.zip"
-DATA_DIR = 'data'
-
-
-class TextExample:
-    def __init__(self, texts, label) -> None:
-        self.texts = texts
-        self.label = label
-        
-    def __repr__(self) -> str:
-        return f"TextExample({self.texts}, label={self.label})"
+DATA_DIR = 'datasets'
 
 
 def load_sts():
@@ -25,14 +19,15 @@ def load_sts():
     data = dict(train=list(), dev=list(), test=list())
     with gzip.open(path, 'rt', encoding='utf8') as fIn:
         reader = csv.DictReader(fIn, delimiter='\t', quoting=csv.QUOTE_NONE)
-        for row in reader:
+        for i, row in enumerate(reader):
             score = float(row['score']) / 5.0  # Normalize score to range 0 ... 1
-            sample = TextExample([row['sentence1'], row['sentence2']], score)
+            sample = InputExample(texts=[row['sentence1'], row['sentence2']],
+                                  label=score)
             data[row['split']].append(sample)
     return data
 
 
-def load_snli(include_mismatched=False):
+def load_nli(include_mismatched=False):
     data = dict(train=list(), dev=list(), test=list())
     for url in [SNLI_URL, MULTINLI_URL]:
         path = download(url)
@@ -45,7 +40,8 @@ def load_snli(include_mismatched=False):
                 except:
                     continue
                 df = pd.read_csv(f.open(fname), sep='\t', quoting=csv.QUOTE_NONE)
-                data[type].extend(TextExample([t.sentence1, t.sentence2], t.gold_label)
+                data[type].extend(InputExample(texts=[t.sentence1, t.sentence2],
+                                               label=t.gold_label)
                                   for t in df.itertuples() if t.gold_label != '-')
     return data
 
