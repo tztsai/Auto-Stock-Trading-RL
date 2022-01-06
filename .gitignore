@@ -3,4 +3,6 @@
 *.pdf
 *.zip
 *.gz
+*.bin
 model_cache/
+vocab.txt
