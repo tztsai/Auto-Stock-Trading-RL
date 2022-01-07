@@ -96,10 +96,10 @@ if __name__ == "__main__":
     import sys
 
     sys.path.append("..")
-    # from finrl.neo_finrl.neofinrl_config import TRADE_START_DATE
-    # from finrl.neo_finrl.neofinrl_config import TRADE_END_DATE
-    # from finrl.neo_finrl.neofinrl_config import READ_DATA_FROM_LOCAL
-    # from finrl.neo_finrl.neofinrl_config import PATH_OF_DATA
+    # from neo_neofinrl_config import TRADE_START_DATE
+    # from neo_neofinrl_config import TRADE_END_DATE
+    # from neo_neofinrl_config import READ_DATA_FROM_LOCAL
+    # from neo_neofinrl_config import PATH_OF_DATA
 
     # read_data_from_local = READ_DATA_FROM_LOCAL
     # path_of_data = '../' + PATH_OF_DATA

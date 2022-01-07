@@ -149,7 +149,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, "FinRL.tex", u"FinRL Documentation", u"FinRL", "manual"),
+    (master_doc, "tex", u"FinRL Documentation", u"FinRL", "manual"),
 ]
 
 

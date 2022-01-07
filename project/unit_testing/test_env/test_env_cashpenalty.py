@@ -1,10 +1,10 @@
 import unittest
 
 import numpy as np
-from finrl.finrl_meta.env_stock_trading.env_stocktrading_cashpenalty import (
+from meta.env_stock_trading.env_stocktrading_cashpenalty import (
     StockTradingEnvCashpenalty,
 )
-from finrl.finrl_meta.preprocessor.yahoodownloader import YahooDownloader
+from meta.preprocessor.yahoodownloader import YahooDownloader
 
 
 class TestStocktradingEnvCashpenalty(unittest.TestCase):

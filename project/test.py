@@ -1,12 +1,12 @@
 import ray
-from finrl.apps.config import (
+from apps.config import (
     DOW_30_TICKER,
     TECHNICAL_INDICATORS_LIST,
     TEST_END_DATE,
     TEST_START_DATE,
     RLlib_PARAMS,
 )
-from finrl.finrl_meta.env_stock_trading.env_stocktrading import StockTradingEnv
+from meta.env_stock_trading.env_stocktrading import StockTradingEnv
 
 
 def test(
@@ -24,12 +24,12 @@ def test(
 ):
 
     # import DRL agents
-    from finrl.drl_agents.stablebaselines3.models import DRLAgent as DRLAgent_sb3
-    from finrl.drl_agents.rllib.models import DRLAgent as DRLAgent_rllib
-    from finrl.drl_agents.elegantrl.models import DRLAgent as DRLAgent_erl
+    from drl_agents.stablebaselines3.models import DRLAgent as DRLAgent_sb3
+    from drl_agents.rllib.models import DRLAgent as DRLAgent_rllib
+    from drl_agents.elegantrl.models import DRLAgent as DRLAgent_erl
 
     # import data processor
-    from finrl.finrl_meta.data_processor import DataProcessor
+    from meta.data_processor import DataProcessor
 
     # fetch data
     DP = DataProcessor(data_source, **kwargs)

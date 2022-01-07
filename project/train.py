@@ -1,8 +1,8 @@
 import ray
-from finrl.drl_agents.elegantrl.models import DRLAgent as DRLAgent_erl
-from finrl.drl_agents.rllib.models import DRLAgent as DRLAgent_rllib
-from finrl.drl_agents.stablebaselines3.models import DRLAgent as DRLAgent_sb3
-from finrl.finrl_meta.data_processor import DataProcessor
+from drl_agents.elegantrl.models import DRLAgent as DRLAgent_erl
+from drl_agents.rllib.models import DRLAgent as DRLAgent_rllib
+from drl_agents.stablebaselines3.models import DRLAgent as DRLAgent_sb3
+from meta.data_processor import DataProcessor
 
 
 def train(
@@ -98,16 +98,16 @@ def train(
 
 
 if __name__ == "__main__":
-    from finrl.app.config import DOW_30_TICKER
-    from finrl.app.config import TECHNICAL_INDICATORS_LIST
-    from finrl.app.config import TRAIN_START_DATE
-    from finrl.app.config import TRAIN_END_DATE
-    from finrl.app.config import ERL_PARAMS
-    from finrl.app.config import RLlib_PARAMS
-    from finrl.app.config import SAC_PARAMS
+    from app.config import DOW_30_TICKER
+    from app.config import TECHNICAL_INDICATORS_LIST
+    from app.config import TRAIN_START_DATE
+    from app.config import TRAIN_END_DATE
+    from app.config import ERL_PARAMS
+    from app.config import RLlib_PARAMS
+    from app.config import SAC_PARAMS
 
     # construct environment
-    from finrl.neo_finrl.env_stock_trading.env_stocktrading_np import StockTradingEnv
+    from neo_env_stock_trading.env_stocktrading_np import StockTradingEnv
 
     env = StockTradingEnv
 

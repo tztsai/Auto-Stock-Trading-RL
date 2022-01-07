@@ -2,8 +2,8 @@ import datetime
 
 import numpy as np
 import pandas as pd
-from finrl.apps import config
-from finrl.finrl_meta.preprocessor.yahoodownloader import YahooDownloader
+from apps import config
+from meta.preprocessor.yahoodownloader import YahooDownloader
 from stockstats import StockDataFrame as Sdf
 
 

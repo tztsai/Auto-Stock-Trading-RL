@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pyfolio
-from finrl.apps import config
-from finrl.finrl_meta.preprocessor.yahoodownloader import YahooDownloader
+from apps import config
+from meta.preprocessor.yahoodownloader import YahooDownloader
 from pyfolio import timeseries
 
 

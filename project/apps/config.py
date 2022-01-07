@@ -1,6 +1,6 @@
 # pd.options.display.max_rows = 10
 # pd.options.display.max_columns = 10
-# PACKAGE_ROOT = pathlib.Path(finrl.__file__).resolve().parent
+# PACKAGE_ROOT = pathlib.Path(__file__).resolve().parent
 # PACKAGE_ROOT = pathlib.Path().resolve().parent
 
 # DATASET_DIR = PACKAGE_ROOT / "data"

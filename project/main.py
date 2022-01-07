@@ -1,7 +1,7 @@
 import os
 from argparse import ArgumentParser
 
-from finrl.apps import config
+from apps import config
 
 
 def build_parser():
@@ -29,9 +29,9 @@ def main():
         os.makedirs("./" + config.RESULTS_DIR)
 
     if options.mode == "train":
-        import finrl.train
+        import train
 
-        finrl.train.train_stock_trading()
+        train.train_stock_trading()
 
 
 if __name__ == "__main__":
