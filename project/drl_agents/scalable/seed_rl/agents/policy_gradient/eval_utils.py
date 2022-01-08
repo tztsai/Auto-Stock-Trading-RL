@@ -15,7 +15,7 @@
 r"""Evaluataion utils."""
 import collections
 from absl import logging
-from .common import utils
+from seed_rl.common import utils
 import tensorflow as tf
 
 # Information about a finished episode.

@@ -17,9 +17,9 @@
 
 import collections
 import gin
-from .agents.policy_gradient.modules import input_normalization
-from .agents.policy_gradient.modules import running_statistics
-from .common import utils
+from seed_rl.agents.policy_gradient.modules import input_normalization
+from seed_rl.agents.policy_gradient.modules import running_statistics
+from seed_rl.common import utils
 import tensorflow as tf
 
 AgentOutput = collections.namedtuple('AgentOutput',

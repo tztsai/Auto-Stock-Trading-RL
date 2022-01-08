@@ -16,7 +16,7 @@
 
 
 import os
-from .dmlab import networks
+from seed_rl.dmlab import networks
 import tensorflow as tf
 
 

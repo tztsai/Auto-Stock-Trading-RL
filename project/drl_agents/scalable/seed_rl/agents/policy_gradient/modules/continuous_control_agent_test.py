@@ -17,12 +17,12 @@
 
 from absl.testing import parameterized
 
-from .agents.policy_gradient.modules import continuous_control_agent
-from .agents.policy_gradient.modules import input_normalization
-from .agents.policy_gradient.modules import running_statistics
-from .agents.policy_gradient.modules import test_utils
-from .common import parametric_distribution
-from .common import utils
+from seed_rl.agents.policy_gradient.modules import continuous_control_agent
+from seed_rl.agents.policy_gradient.modules import input_normalization
+from seed_rl.agents.policy_gradient.modules import running_statistics
+from seed_rl.agents.policy_gradient.modules import test_utils
+from seed_rl.common import parametric_distribution
+from seed_rl.common import utils
 import tensorflow as tf
 
 

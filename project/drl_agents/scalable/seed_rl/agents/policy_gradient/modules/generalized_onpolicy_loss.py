@@ -18,7 +18,7 @@
 import abc
 import inspect
 import gin
-from .agents.policy_gradient.modules import logging_module
+from seed_rl.agents.policy_gradient.modules import logging_module
 import tensorflow as tf
 
 

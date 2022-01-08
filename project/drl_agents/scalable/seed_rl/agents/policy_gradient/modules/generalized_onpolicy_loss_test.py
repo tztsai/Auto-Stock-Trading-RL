@@ -16,12 +16,12 @@
 """Tests for generalized_onpolicy_loss."""
 
 import collections
-from .agents.policy_gradient.modules import advantages
-from .agents.policy_gradient.modules import generalized_onpolicy_loss
-from .agents.policy_gradient.modules import popart
-from .agents.policy_gradient.modules import running_statistics
-from .agents.policy_gradient.modules import test_utils
-from .common import parametric_distribution
+from seed_rl.agents.policy_gradient.modules import advantages
+from seed_rl.agents.policy_gradient.modules import generalized_onpolicy_loss
+from seed_rl.agents.policy_gradient.modules import popart
+from seed_rl.agents.policy_gradient.modules import running_statistics
+from seed_rl.agents.policy_gradient.modules import test_utils
+from seed_rl.common import parametric_distribution
 import tensorflow as tf
 
 _AgentOutput = collections.namedtuple('AgentOutput',

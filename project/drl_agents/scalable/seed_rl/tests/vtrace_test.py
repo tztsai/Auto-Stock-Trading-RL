@@ -23,8 +23,8 @@ by Espeholt, Soyer, Munos et al.
 
 from absl.testing import parameterized
 import numpy as np
-from .common import parametric_distribution
-from .common import vtrace
+from seed_rl.common import parametric_distribution
+from seed_rl.common import vtrace
 import tensorflow as tf
 
 

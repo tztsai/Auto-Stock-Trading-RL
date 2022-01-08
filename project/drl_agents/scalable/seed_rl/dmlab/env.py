@@ -22,8 +22,8 @@ from absl import logging
 
 import gym
 import numpy as np
-from .common import common_flags  
-from .dmlab import games
+from seed_rl.common import common_flags  
+from seed_rl.dmlab import games
 import tensorflow as tf
 
 import deepmind_lab

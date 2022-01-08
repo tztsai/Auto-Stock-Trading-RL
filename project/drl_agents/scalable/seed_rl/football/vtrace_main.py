@@ -19,11 +19,11 @@
 from absl import app
 from absl import flags
 
-from .agents.vtrace import learner
-from .common import actor
-from .common import common_flags  
-from .football import env
-from .football import networks
+from seed_rl.agents.vtrace import learner
+from seed_rl.common import actor
+from seed_rl.common import common_flags  
+from seed_rl.football import env
+from seed_rl.football import networks
 import tensorflow as tf
 
 

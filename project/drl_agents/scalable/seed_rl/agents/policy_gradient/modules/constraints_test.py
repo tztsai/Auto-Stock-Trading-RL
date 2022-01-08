@@ -15,7 +15,7 @@
 
 """Tests constraints."""
 
-from .agents.policy_gradient.modules import constraints
+from seed_rl.agents.policy_gradient.modules import constraints
 import tensorflow as tf
 
 

@@ -15,8 +15,8 @@
 """SEED agent using Keras."""
 
 import collections
-from .common import utils
-from .football import observation
+from seed_rl.common import utils
+from seed_rl.football import observation
 import tensorflow as tf
 
 

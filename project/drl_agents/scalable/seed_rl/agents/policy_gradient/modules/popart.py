@@ -26,8 +26,8 @@ output.
 """
 
 import gin
-from .agents.policy_gradient.modules import logging_module
-from .agents.policy_gradient.modules import running_statistics
+from seed_rl.agents.policy_gradient.modules import logging_module
+from seed_rl.agents.policy_gradient.modules import running_statistics
 import tensorflow as tf
 
 

@@ -15,7 +15,7 @@
 """Environment test."""
 
 from absl import flags
-from .football import env
+from seed_rl.football import env
 import tensorflow as tf
 
 FLAGS = flags.FLAGS

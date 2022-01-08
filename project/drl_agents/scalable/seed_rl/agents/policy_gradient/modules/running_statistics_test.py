@@ -17,8 +17,8 @@
 
 from absl.testing import parameterized
 
-from .agents.policy_gradient.modules import running_statistics
-from .agents.policy_gradient.modules import test_utils
+from seed_rl.agents.policy_gradient.modules import running_statistics
+from seed_rl.agents.policy_gradient.modules import test_utils
 import tensorflow as tf
 
 

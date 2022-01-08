@@ -15,8 +15,8 @@
 
 """Tests for logging_module."""
 
-from .agents.policy_gradient.modules import logging_module
-from .agents.policy_gradient.modules import test_utils
+from seed_rl.agents.policy_gradient.modules import logging_module
+from seed_rl.agents.policy_gradient.modules import test_utils
 import tensorflow as tf
 
 

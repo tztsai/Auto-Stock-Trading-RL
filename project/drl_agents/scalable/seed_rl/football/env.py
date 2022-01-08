@@ -18,8 +18,8 @@ from absl import flags
 from absl import logging
 
 import gym
-from .common import common_flags  
-from .football import observation
+from seed_rl.common import common_flags  
+from seed_rl.football import observation
 
 FLAGS = flags.FLAGS
 

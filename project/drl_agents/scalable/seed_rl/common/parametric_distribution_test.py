@@ -17,7 +17,7 @@
 
 from gym import spaces
 import numpy as np
-from ..common import parametric_distribution
+from seed_rl.common import parametric_distribution
 import tensorflow as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions

@@ -20,16 +20,16 @@ import collections
 from absl.testing import parameterized
 import gym
 import numpy as np
-from .agents.policy_gradient.modules import advantages as ga_advantages
-from .agents.policy_gradient.modules import continuous_control_agent
-from .agents.policy_gradient.modules import generalized_onpolicy_loss
-from .agents.policy_gradient.modules import policy_losses
-from .agents.policy_gradient.modules import policy_regularizers
-from .agents.policy_gradient.modules import popart
-from .agents.policy_gradient.modules import ppo_training_step_utils
-from .agents.policy_gradient.modules import running_statistics
-from .common import parametric_distribution
-from .common import utils
+from seed_rl.agents.policy_gradient.modules import advantages as ga_advantages
+from seed_rl.agents.policy_gradient.modules import continuous_control_agent
+from seed_rl.agents.policy_gradient.modules import generalized_onpolicy_loss
+from seed_rl.agents.policy_gradient.modules import policy_losses
+from seed_rl.agents.policy_gradient.modules import policy_regularizers
+from seed_rl.agents.policy_gradient.modules import popart
+from seed_rl.agents.policy_gradient.modules import ppo_training_step_utils
+from seed_rl.agents.policy_gradient.modules import running_statistics
+from seed_rl.common import parametric_distribution
+from seed_rl.common import utils
 import tensorflow as tf
 
 Unroll = collections.namedtuple(

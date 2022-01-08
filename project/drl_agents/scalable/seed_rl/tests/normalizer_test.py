@@ -15,7 +15,7 @@
 """Tests for normalizer."""
 
 import numpy as np
-from .common import normalizer
+from seed_rl.common import normalizer
 import tensorflow as tf
 
 

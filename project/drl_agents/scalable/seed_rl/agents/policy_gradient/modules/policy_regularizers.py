@@ -16,8 +16,8 @@
 """Constraints with Lagrange multipliers."""
 
 import gin
-from .agents.policy_gradient.modules import constraints
-from .agents.policy_gradient.modules import logging_module
+from seed_rl.agents.policy_gradient.modules import constraints
+from seed_rl.agents.policy_gradient.modules import logging_module
 import tensorflow as tf
 import tensorflow_probability as tfp
 

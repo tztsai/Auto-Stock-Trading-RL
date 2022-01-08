@@ -16,9 +16,9 @@
 
 from absl import flags
 import numpy as np
-from .agents.r2d2 import learner
-from .atari import networks
-from .common import utils
+from seed_rl.agents.r2d2 import learner
+from seed_rl.atari import networks
+from seed_rl.common import utils
 import tensorflow as tf
 
 

@@ -23,11 +23,11 @@ import time
 from absl import flags
 from absl import logging
 
-from . import grpc
-from ...common import common_flags  
-from ...common import utils
-from ...common import vtrace
-from ...common.parametric_distribution import get_parametric_distribution_for_action_space
+from seed_rl import grpc
+from seed_rl.common import common_flags  
+from seed_rl.common import utils
+from seed_rl.common import vtrace
+from seed_rl.common.parametric_distribution import get_parametric_distribution_for_action_space
 
 import tensorflow as tf
 

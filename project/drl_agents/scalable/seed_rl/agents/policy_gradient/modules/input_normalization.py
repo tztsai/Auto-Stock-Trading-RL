@@ -16,7 +16,7 @@
 """Implements different input normalization strategies for RL."""
 
 import gin
-from .agents.policy_gradient.modules import running_statistics
+from seed_rl.agents.policy_gradient.modules import running_statistics
 import tensorflow as tf
 
 

@@ -17,8 +17,8 @@
 
 from absl import flags
 
-from .agents.policy_gradient import learner_config
-from .common import common_flags  
+from seed_rl.agents.policy_gradient import learner_config
+from seed_rl.common import common_flags  
 
 # Training.
 flags.DEFINE_integer('total_environment_frames', int(1e9),

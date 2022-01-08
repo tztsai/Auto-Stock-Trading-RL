@@ -17,9 +17,9 @@
 
 from absl.testing import parameterized
 
-from .agents.policy_gradient.modules import advantages
-from .agents.policy_gradient.modules import test_utils
-from .common import vtrace
+from seed_rl.agents.policy_gradient.modules import advantages
+from seed_rl.agents.policy_gradient.modules import test_utils
+from seed_rl.common import vtrace
 import tensorflow as tf
 import tensorflow_probability as tfp
 

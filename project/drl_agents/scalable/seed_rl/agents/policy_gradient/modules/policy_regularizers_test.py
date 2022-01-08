@@ -15,10 +15,10 @@
 
 """Tests for policy_regularizers."""
 
-from .agents.policy_gradient.modules import constraints
-from .agents.policy_gradient.modules import policy_regularizers
-from .agents.policy_gradient.modules import test_utils
-from .common import parametric_distribution
+from seed_rl.agents.policy_gradient.modules import constraints
+from seed_rl.agents.policy_gradient.modules import policy_regularizers
+from seed_rl.agents.policy_gradient.modules import test_utils
+from seed_rl.common import parametric_distribution
 import tensorflow as tf
 
 

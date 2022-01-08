@@ -22,11 +22,11 @@ Actor and learner are in the same binary so that all flags are shared.
 from absl import app
 from absl import flags
 
-from .agents.vtrace import learner
-from .common import actor
-from .common import common_flags  
-from .dmlab import env
-from .dmlab import networks
+from seed_rl.agents.vtrace import learner
+from seed_rl.common import actor
+from seed_rl.common import common_flags  
+from seed_rl.dmlab import env
+from seed_rl.dmlab import networks
 import tensorflow as tf
 
 

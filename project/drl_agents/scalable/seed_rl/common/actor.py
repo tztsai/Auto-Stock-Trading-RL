@@ -20,11 +20,11 @@ import timeit
 from absl import flags
 from absl import logging
 import numpy as np
-from .. import grpc
-from ..common import common_flags
-from ..common import env_wrappers
-from ..common import profiling
-from ..common import utils
+from seed_rl import grpc
+from seed_rl.common import common_flags  
+from seed_rl.common import env_wrappers
+from seed_rl.common import profiling
+from seed_rl.common import utils
 import tensorflow as tf
 
 

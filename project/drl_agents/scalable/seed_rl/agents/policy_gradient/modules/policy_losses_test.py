@@ -14,8 +14,8 @@
 
 
 """Tests for policy_lisses."""
-from .agents.policy_gradient.modules import policy_losses
-from .agents.policy_gradient.modules import test_utils
+from seed_rl.agents.policy_gradient.modules import policy_losses
+from seed_rl.agents.policy_gradient.modules import test_utils
 import tensorflow as tf
 
 

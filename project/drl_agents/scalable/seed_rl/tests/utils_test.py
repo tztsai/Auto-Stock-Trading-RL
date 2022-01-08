@@ -19,7 +19,7 @@ import collections
 from absl.testing import parameterized
 
 import numpy as np
-from .common import utils
+from seed_rl.common import utils
 import tensorflow as tf
 
 

@@ -25,17 +25,17 @@ from absl import flags
 from absl import logging
 import dataclasses
 import numpy as np
-from . import grpc
-from .agents.policy_gradient import eval_utils
-from .agents.policy_gradient import learner_config
-from .agents.policy_gradient.modules import advantages as gae  
-from .agents.policy_gradient.modules import generalized_onpolicy_loss
-from .agents.policy_gradient.modules import policy_losses  
-from .agents.policy_gradient.modules import policy_regularizers  
-from .agents.policy_gradient.modules import ppo_training_step_utils as ppo_utils
-from .common import common_flags  
-from .common import parametric_distribution
-from .common import utils
+from seed_rl import grpc
+from seed_rl.agents.policy_gradient import eval_utils
+from seed_rl.agents.policy_gradient import learner_config
+from seed_rl.agents.policy_gradient.modules import advantages as gae  
+from seed_rl.agents.policy_gradient.modules import generalized_onpolicy_loss
+from seed_rl.agents.policy_gradient.modules import policy_losses  
+from seed_rl.agents.policy_gradient.modules import policy_regularizers  
+from seed_rl.agents.policy_gradient.modules import ppo_training_step_utils as ppo_utils
+from seed_rl.common import common_flags  
+from seed_rl.common import parametric_distribution
+from seed_rl.common import utils
 import tensorflow as tf
 from tensorflow.python.ops import state_ops  
 

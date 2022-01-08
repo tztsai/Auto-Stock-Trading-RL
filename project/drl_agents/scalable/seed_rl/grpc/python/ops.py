@@ -21,8 +21,8 @@ from __future__ import print_function
 import collections
 import types
 
-from .. import service_pb2
-from ..python.ops_wrapper import gen_grpc_ops
+from seed_rl.grpc import service_pb2
+from seed_rl.grpc.python.ops_wrapper import gen_grpc_ops
 import tensorflow as tf
 
 

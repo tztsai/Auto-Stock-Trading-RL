@@ -17,7 +17,7 @@
 import os
 
 from absl import flags
-from .dmlab import env
+from seed_rl.dmlab import env
 import tensorflow as tf
 import deepmind_lab
 

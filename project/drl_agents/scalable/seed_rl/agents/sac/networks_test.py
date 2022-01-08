@@ -15,9 +15,9 @@
 """Tests for network architectures."""
 
 from absl import flags
-from .agents.sac import networks
-from .common import parametric_distribution
-from .common import utils
+from seed_rl.agents.sac import networks
+from seed_rl.common import parametric_distribution
+from seed_rl.common import utils
 import tensorflow as tf
 
 FLAGS = flags.FLAGS
