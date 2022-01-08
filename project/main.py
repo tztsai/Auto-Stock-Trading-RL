@@ -337,18 +337,14 @@ e_trade_gym = StockTradingEnv(df = trade, turbulence_threshold = 70,risk_indicat
 trade.head()
 
 # %%
-df_account_value, df_actions = DRLAgent.DRL_prediction(
-    model=trained_sac, 
-    environment = e_trade_gym)
+monobeast.CustomEnv.env = e_trade_gym
+df_account_value = monobeast.test(FLAGS)
 
 # %%
 df_account_value.shape
 
 # %%
 df_account_value.tail()
-
-# %%
-df_actions.head()
 
 # %% [markdown]
 # <a id='6'></a>
