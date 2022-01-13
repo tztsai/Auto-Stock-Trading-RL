@@ -26,19 +26,15 @@ os.environ["OMP_NUM_THREADS"] = "1"  # Necessary for multithreading.
 
 import numpy as np
 
+import gym
 import torch
 from torch import multiprocessing as mp
 from torch import nn
 from torch.nn import functional as F
-
-# from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
-# from stablebaselines3.models import DRLAgent
-# from elegantrl.agents.AgentSAC import AgentSAC
-# from elegantrl.train.config import Arguments
+from torch.distributions.multivariate_normal import MultivariateNormal
 
 from absl import flags
 
-from torchbeast.torchbeast.core.environment import Environment
 from torchbeast.torchbeast.core import file_writer
 from torchbeast.torchbeast.core import prof
 from torchbeast.torchbeast.core import vtrace
@@ -47,7 +43,6 @@ from torchbeast.torchbeast.core import vtrace
 # yapf: disable
 # parser = argparse.ArgumentParser(description="PyTorch Scalable Agent")
 
-flags.DEFINE_string("env", default="PongNoFrameskip-v4", help="Gym environment.")
 flags.DEFINE_enum("mode", default="train",
                     enum_values=["train", "test", "test_render"],
                     help="Training or test mode.")
@@ -74,8 +69,6 @@ flags.DEFINE_integer("num_learner_threads", default=2,
                     help="Number learner threads.")
 flags.DEFINE_bool("disable_cuda", default=False,
                     help="Disable CUDA.")
-flags.DEFINE_bool("use_lstm", default=True,
-                    help="Use LSTM in agent model.")
 
 # Loss settings.
 flags.DEFINE_float("entropy_cost", default=0.0006,
@@ -118,18 +111,22 @@ def compute_baseline_loss(advantages):
 
 def compute_entropy_loss(logits):
     """Return the entropy loss, i.e., the negative entropy of the policy."""
-    policy = F.softmax(logits, dim=-1)
-    log_policy = F.log_softmax(logits, dim=-1)
-    return torch.sum(policy * log_policy)
+    # policy = F.softmax(logits, dim=-1)
+    # log_policy = F.log_softmax(logits, dim=-1)
+    # return torch.sum(policy * log_policy)
+    dist = vtrace.logits_to_distribution(logits)
+    return torch.sum(dist.entropy())
 
 
 def compute_policy_gradient_loss(logits, actions, advantages):
-    cross_entropy = F.nll_loss(
-        F.log_softmax(torch.flatten(logits, 0, 1), dim=-1),
-        target=torch.flatten(actions, 0, 1),
-        reduction="none",
-    )
-    cross_entropy = cross_entropy.view_as(advantages)
+    dist = vtrace.logits_to_distribution(logits)
+    cross_entropy = -dist.log_prob(actions)
+    # cross_entropy = F.nll_loss(
+    #     F.log_softmax(torch.flatten(logits, 0, 1), dim=-1),
+    #     target=torch.flatten(actions, 0, 1),
+    #     reduction="none",
+    # )
+    # cross_entropy = cross_entropy.view_as(advantages)
     return torch.sum(cross_entropy * advantages.detach())
 
 
@@ -146,10 +143,9 @@ def act(
         logging.info("Actor %i started.", actor_index)
         timings = prof.Timings()  # Keep track of how fast things are.
 
-        gym_env = create_env(flags)
+        env = create_env(flags)
         seed = actor_index ^ int.from_bytes(os.urandom(4), byteorder="little")
-        gym_env.seed(seed)
-        env = Environment(gym_env)
+        env.gym_env.seed(seed)
         env_output = env.initial()
         agent_state = model.initial_state(batch_size=1)
         agent_output, unused_state = model(env_output, agent_state)
@@ -160,9 +156,9 @@ def act(
 
             # Write old rollout end.
             for key in env_output:
-                buffers[key][index][0, ...] = torch.squeeze(env_output[key])
+                buffers[key][index][0, ...] = env_output[key]
             for key in agent_output:
-                buffers[key][index][0, ...] = torch.squeeze(agent_output[key])
+                buffers[key][index][0, ...] = agent_output[key]
             for i, tensor in enumerate(agent_state):
                 initial_agent_state_buffers[index][i][...] = tensor
 
@@ -270,6 +266,7 @@ def learn(
             bootstrap_value=bootstrap_value,
         )
 
+        #! Loss incorrect
         pg_loss = compute_policy_gradient_loss(
             learner_outputs["policy_logits"],
             batch["action"],
@@ -312,7 +309,7 @@ def create_buffers(flags, obs_shape, num_actions) -> Buffers:
         done=dict(size=(T + 1,), dtype=torch.bool),
         episode_return=dict(size=(T + 1,), dtype=torch.float32),
         episode_step=dict(size=(T + 1,), dtype=torch.int32),
-        policy_logits=dict(size=(T + 1, num_actions), dtype=torch.float32),
+        policy_logits=dict(size=(T + 1, 2 * num_actions), dtype=torch.float32),
         baseline=dict(size=(T + 1,), dtype=torch.float32),
         last_action=dict(size=(T + 1, num_actions), dtype=torch.int64),
         action=dict(size=(T + 1, num_actions), dtype=torch.int64),
@@ -355,13 +352,6 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
         flags.device = torch.device("cpu")
 
     env = create_env(flags)
-    
-    try:
-        num_actions = env.action_space.n
-    except:
-        assert len(env.action_space.shape) == 1
-        num_actions = env.action_space.shape[-1]
-        
     model = Net(env)
     buffers = create_buffers(flags, env.observation_space.shape, model.num_actions)
 
@@ -527,9 +517,8 @@ def test(flags, num_episodes: int = 10):
             os.path.expanduser("%s/%s/%s" % (flags.savedir, flags.xpid, "model.tar"))
         )
 
-    gym_env = create_env(flags)
-    env = Environment(gym_env)
-    model = Net(gym_env)
+    env = create_env(flags)
+    model = Net(env)
     model.eval()
     checkpoint = torch.load(checkpointpath, map_location="cpu")
     model.load_state_dict(checkpoint["model_state_dict"])
@@ -537,7 +526,7 @@ def test(flags, num_episodes: int = 10):
     observation = env.initial()
     episode_returns = list()  # the cumulative_return / initial_account
     episode_total_assets = list()
-    episode_total_assets.append(gym_env.initial_total_asset)
+    episode_total_assets.append(env.initial_total_asset)
     
     for i in range(env.gym_env.max_step):
         agent_outputs = model(observation)
@@ -545,13 +534,13 @@ def test(flags, num_episodes: int = 10):
         observation = env.step(policy_outputs["action"])
 
         total_asset = (
-            gym_env.amount
+            env.gym_env.amount
             + (
-                gym_env.price_ary[gym_env.day] * gym_env.stocks
+                env.price_ary[env.day] * env.stocks
             ).sum()
         )
         episode_total_assets.append(total_asset)
-        episode_return = total_asset / gym_env.initial_total_asset
+        episode_return = total_asset / env.initial_total_asset
         episode_returns.append(episode_return)
         
         if observation['done'].item():
@@ -567,117 +556,32 @@ def test(flags, num_episodes: int = 10):
     print("episode_return", episode_return)
     return episode_total_assets
 
-    observation = env.initial()
-    returns = []
 
-    while len(returns) < num_episodes:
-        if flags.mode == "test_render":
-            env.gym_env.render()
-        agent_outputs = model(observation)
-        policy_outputs, _ = agent_outputs
-        observation = env.step(policy_outputs["action"])
-        if observation["done"].item():
-            returns.append(observation["episode_return"].item())
-            logging.info(
-                "Episode ended after %d steps. Return: %.1f",
-                observation["episode_step"].item(),
-                observation["episode_return"].item(),
+def df_to_array(df, tech_indicator_list, if_vix=True):
+    unique_ticker = df.tic.unique()
+    if_first_time = True
+    for tic in unique_ticker:
+        if if_first_time:
+            price_array = df[df.tic == tic][["adjcp"]].values
+            # price_ary = df[df.tic==tic]['close'].values
+            tech_array = df[df.tic == tic][tech_indicator_list].values
+            if if_vix:
+                turbulence_array = df[df.tic == tic]["vix"].values
+            else:
+                turbulence_array = df[df.tic == tic]["turbulence"].values
+            if_first_time = False
+        else:
+            price_array = np.hstack(
+                [price_array, df[df.tic == tic][["adjcp"]].values]
             )
-    env.close()
-    logging.info(
-        "Average returns over %i steps: %.1f", num_episodes, sum(returns) / len(returns)
-    )
+            tech_array = np.hstack(
+                [tech_array, df[df.tic == tic][tech_indicator_list].values]
+            )
+    assert price_array.shape[0] == tech_array.shape[0]
+    assert tech_array.shape[0] == turbulence_array.shape[0]
+    print("Successfully transformed into array")
+    return price_array, tech_array, turbulence_array
 
-
-class AtariNet(nn.Module):
-    def __init__(self, observation_shape, num_actions, use_lstm=False):
-        super().__init__()
-        self.observation_shape = observation_shape
-        self.num_actions = num_actions
-
-        # Feature extraction.
-        self.conv1 = nn.Conv2d(
-            in_channels=self.observation_shape[0],
-            out_channels=32,
-            kernel_size=8,
-            stride=4,
-        )
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
-
-        # Fully connected layer.
-        self.fc = nn.Linear(3136, 512)
-        
-        # FC output size + one-hot of last action + last reward.
-        core_output_size = self.fc.out_features + num_actions + 1
-
-        self.use_lstm = use_lstm
-        if use_lstm:
-            self.core = nn.LSTM(core_output_size, core_output_size, 2)
-
-        self.policy = nn.Linear(core_output_size, self.num_actions)
-        self.baseline = nn.Linear(core_output_size, 1)
-
-    def initial_state(self, batch_size):
-        if not self.use_lstm:
-            return tuple()
-        return tuple(
-            torch.zeros(self.core.num_layers, batch_size, self.core.hidden_size)
-            for _ in range(2)
-        )
-
-    def forward(self, inputs, core_state=()):
-        x = inputs["frame"]  # [T, B, C, H, W].
-        T, B, *_ = x.shape
-        x = torch.flatten(x, 0, 1)  # Merge time and batch.
-        x = x.float() / 255.0
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = x.view(T * B, -1)
-        x = F.relu(self.fc(x))
-
-        one_hot_last_action = F.one_hot(
-            inputs["last_action"].view(T * B), self.num_actions
-        ).float()
-        clipped_reward = torch.clamp(inputs["reward"], -1, 1).view(T * B, 1)
-        core_input = torch.cat([x, clipped_reward, one_hot_last_action], dim=-1)
-
-        if self.use_lstm:
-            core_input = core_input.view(T, B, -1)
-            core_output_list = []
-            notdone = (~inputs["done"]).float()
-            for input, nd in zip(core_input.unbind(), notdone.unbind()):
-                # Reset core state to zero whenever an episode ended.
-                # Make `done` broadcastable with (num_layers, B, hidden_size)
-                # states:
-                nd = nd.view(1, -1, 1)
-                core_state = tuple(nd * s for s in core_state)
-                output, core_state = self.core(input.unsqueeze(0), core_state)
-                core_output_list.append(output)
-            core_output = torch.flatten(torch.cat(core_output_list), 0, 1)
-        else:
-            core_output = core_input
-            core_state = tuple()
-
-        policy_logits = self.policy(core_output)
-        baseline = self.baseline(core_output)
-
-        if self.training:
-            action = torch.multinomial(F.softmax(policy_logits, dim=1), num_samples=1)
-        else:
-            # Don't sample when testing.
-            action = torch.argmax(policy_logits, dim=1)
-
-        policy_logits = policy_logits.view(T, B, self.num_actions)
-        baseline = baseline.view(T, B)
-        action = action.view(T, B)
-
-        return (
-            dict(policy_logits=policy_logits, baseline=baseline, action=action),
-            core_state,
-        )
-       
 
 class ActorNet(nn.Module):
 
@@ -688,8 +592,8 @@ class ActorNet(nn.Module):
         action_dim = env.action_space.shape[-1]
 
         self.net_state = nn.Sequential(nn.Linear(state_dim, net_dim),
-                                    #    nn.ReLU(),
-                                    #    nn.Linear(net_dim, net_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(net_dim, net_dim),
                                        nn.ReLU())
         
         core_out_dim = net_dim + action_dim + 1
@@ -701,7 +605,7 @@ class ActorNet(nn.Module):
             nn.Linear(core_out_dim, net_dim),
             nn.Hardswish(),
             nn.Linear(net_dim, action_dim))
-        self.net_action_std = nn.Sequential(
+        self.net_action_logstd = nn.Sequential(
             nn.Hardswish(),
             nn.Linear(core_out_dim, action_dim)
         )
@@ -729,7 +633,7 @@ class ActorNet(nn.Module):
 
         core_input = torch.cat([
             x.view(T, B, -1),
-            torch.clamp(inputs["reward"], -1, 1).float(),
+            torch.clamp(inputs["reward"], -1, 1).view(T, B, 1).float(),
             inputs["last_action"].float(),
         ], dim=-1)
         
@@ -737,40 +641,103 @@ class ActorNet(nn.Module):
         notdone = (~inputs["done"]).float()
         for input, nd in zip(core_input.unbind(), notdone.unbind()):
             # Reset core state to zero whenever an episode ended.
-            # Make `done` broadcastable with (num_layers, B, hidden_size)
-            # states:
-            nd = nd.view(1, -1, 1)
-            core_state = tuple(nd * s for s in core_state)
+            # Make `done` broadcastable with (num_layers, B, hidden_size) states
+            core_state = tuple(nd.view(1, -1, 1) * s for s in core_state)
             output, core_state = self.core(input.unsqueeze(0), core_state)
             core_output_list.append(output)
         core_output = torch.flatten(torch.cat(core_output_list), 0, 1)
 
-        policy = self.net_policy(core_output)
+        action_mean = self.net_policy(core_output)
         baseline = self.baseline(core_output)
 
         if self.training:
-            action_std = self.net_action_std(core_output).clamp(-20, 2).exp()
-            action = torch.normal(policy, action_std).tanh()
+            action_std = self.net_action_logstd(core_output).clamp(-20, 2).exp()
+            action = torch.normal(action_mean, action_std).tanh()
         else:
-            action = policy.tanh()
-
-        policy = policy.view(T, B, self.num_actions)
+            action = action_mean.tanh()
+        
+        policy_logits = torch.cat([
+            action_mean.view(T, B, self.num_actions),
+            action_std.view(T, B, self.num_actions)
+        ], dim=-1)
         baseline = baseline.view(T, B)
         action = action.view(T, B, self.num_actions)
 
-        return (
-            dict(policy_logits=policy, baseline=baseline, action=action),
-            core_state,
-        )
+        return (dict(policy_logits=policy_logits,
+                     baseline=baseline,
+                     action=action),
+                core_state)
 
 
 Net = ActorNet
 
 
-class config:
-    env = None
+class Environment(gym.Wrapper):
+    default_env = None
+    
+    def __init__(self, gym_env):
+        super().__init__(gym_env)
+        self.gym_env = gym_env
+        self.episode_return = None
+        self.episode_step = None
+        
+    @staticmethod
+    def _format_frame(frame):
+        frame = torch.tensor(frame)
+        return frame.view((1, 1) + frame.shape)  # (...) -> (T,B,...).
+    
+    @property
+    def num_actions(self):
+        return self.action_space.shape[-1]
+
+    def initial(self):
+        initial_reward = torch.zeros(1, 1)
+        # This supports only single-tensor actions ATM.
+        initial_last_action = torch.zeros(1, 1, self.num_actions, dtype=torch.int64)
+        self.episode_return = torch.zeros(1, 1)
+        self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
+        initial_done = torch.ones(1, 1, dtype=torch.uint8)
+        initial_frame = self._format_frame(self.gym_env.reset())
+        return dict(
+            frame=initial_frame,
+            reward=initial_reward,
+            done=initial_done,
+            episode_return=self.episode_return,
+            episode_step=self.episode_step,
+            last_action=initial_last_action,
+        )
+
+    def step(self, action):
+        frame, reward, done, _ = self.gym_env.step(action.numpy().squeeze())
+        self.episode_step += 1
+        self.episode_return += reward
+        episode_step = self.episode_step
+        episode_return = self.episode_return
+        if done:
+            frame = self.gym_env.reset()
+            self.episode_return = torch.zeros(1, 1)
+            self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
+
+        frame = self._format_frame(frame)
+        reward = torch.tensor(reward).view(1, 1)
+        done = torch.tensor(done).view(1, 1)
+
+        return dict(
+            frame=frame,
+            reward=reward,
+            done=done,
+            episode_return=episode_return,
+            episode_step=episode_step,
+            last_action=action,
+        )
+
+    def close(self):
+        self.gym_env.close()
 
 
 def create_env(flags):
-    return config.env
+    return Environment(Environment.default_env)
 
+
+def set_env(env):
+    Environment.default_env = env
