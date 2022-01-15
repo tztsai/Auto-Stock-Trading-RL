@@ -76,7 +76,7 @@ import datetime
 from finrl.apps import config
 from finrl.finrl_meta.preprocessor.yahoodownloader import YahooDownloader
 from finrl.finrl_meta.preprocessor.preprocessors import FeatureEngineer, data_split
-from finrl.finrl_meta.env_stock_trading.env_stocktrading import StockTradingEnv
+from finrl.finrl_meta.env_stock_trading.env_stocktrading_np import StockTradingEnv
 # from drl_agents.stablebaselines3.models import DRLAgent
 from finrl.plot import backtest_stats, backtest_plot, get_baseline
 
@@ -169,11 +169,24 @@ else:
 
 # %%
 if data is None:
-    df = YahooDownloader(
-        start_date = '2009-01-01',
-        end_date = '2021-10-31',
-        ticker_list = config.DOW_30_TICKER
-    ).fetch_data()
+    import yfinance as yf
+    df = pd.DataFrame()
+    for tic in config.DOW_30_TICKER:
+        temp_df = yf.download(tic, start='2009-01-01', end='2021-12-31')
+        temp_df["tic"] = tic
+        df = df.append(temp_df)
+    df = df.reset_index()
+    df.columns = [
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "adjcp",
+        "volume",
+        "tic",
+    ]
+
 
 # %%
 if data is None:
@@ -218,36 +231,6 @@ if data is None:
 else:
     processed_full = data
     
-# %%
-def df_to_array(df,
-                tech_indicator_list=config.TECHNICAL_INDICATORS_LIST,
-                if_vix=True):
-    unique_ticker = df.tic.unique()
-    if_first_time = True
-    for tic in unique_ticker:
-        if if_first_time:
-            price_array = df[df.tic == tic][["adjcp"]].values
-            # price_ary = df[df.tic==tic]['close'].values
-            tech_array = df[df.tic == tic][tech_indicator_list].values
-            if if_vix:
-                turbulence_array = df[df.tic == tic]["vix"].values
-            else:
-                turbulence_array = df[df.tic == tic]["turbulence"].values
-            if_first_time = False
-        else:
-            price_array = np.hstack(
-                [price_array, df[df.tic == tic][["adjcp"]].values]
-            )
-            tech_array = np.hstack(
-                [tech_array, df[df.tic == tic][tech_indicator_list].values]
-            )
-    assert price_array.shape[0] == tech_array.shape[0]
-    assert tech_array.shape[0] == turbulence_array.shape[0]
-    print("Successfully transformed into array")
-    return price_array, tech_array, turbulence_array
-
-# price_array, tech_array, turbulence_array = df_to_array(processed_full)
-
 
 # %%
 processed_full['date'] = pd.to_datetime(processed_full['date'])
@@ -292,6 +275,39 @@ state_space = 1 + 2*stock_dimension + len(config.TECHNICAL_INDICATORS_LIST)*stoc
 print(f"Stock Dimension: {stock_dimension}, State Space: {state_space}")
 
 
+# %%
+def df_to_array(df, tech_indicator_list=None, if_vix=True):
+    if tech_indicator_list is None:
+        tech_indicator_list = config.TECHNICAL_INDICATORS_LIST
+    unique_ticker = df.tic.unique()
+    if_first_time = True
+    for tic in unique_ticker:
+        if if_first_time:
+            price_array = df[df.tic == tic][["adjcp"]].values
+            # price_ary = df[df.tic==tic]['close'].values
+            tech_array = df[df.tic == tic][tech_indicator_list].values
+            if if_vix:
+                turbulence_array = df[df.tic == tic]["vix"].values
+            else:
+                turbulence_array = df[df.tic == tic]["turbulence"].values
+            if_first_time = False
+        else:
+            price_array = np.hstack(
+                [price_array, df[df.tic == tic][["adjcp"]].values]
+            )
+            tech_array = np.hstack(
+                [tech_array, df[df.tic == tic][tech_indicator_list].values]
+            )
+    assert price_array.shape[0] == tech_array.shape[0]
+    assert tech_array.shape[0] == turbulence_array.shape[0]
+    print("Successfully transformed into array")
+
+    return dict(
+        price_array=price_array,
+        tech_array=tech_array,
+        turbulence_array=turbulence_array
+    )
+    
 
 # %% [markdown]
 #  ## Environment for Training
@@ -299,20 +315,19 @@ print(f"Stock Dimension: {stock_dimension}, State Space: {state_space}")
 # 
 
 # %%
-env_kwargs = {
-    "hmax": 100, 
-    "initial_amount": 1000000, 
-    "buy_cost_pct": 0.001,
-    "sell_cost_pct": 0.001,
-    "state_space": state_space, 
-    "stock_dim": stock_dimension, 
-    "tech_indicator_list": config.TECHNICAL_INDICATORS_LIST, 
-    "action_space": stock_dimension, 
-    "reward_scaling": 1e-4
-    
-}
+# env_config = {
+#     "hmax": 100, 
+#     "initial_account": 1000000, 
+#     "buy_cost_pct": 0.001,
+#     "sell_cost_pct": 0.001,
+#     "state_space": state_space, 
+#     "stock_dim": stock_dimension, 
+#     "tech_indicator_list": config.TECHNICAL_INDICATORS_LIST, 
+#     "action_space": stock_dimension, 
+#     "reward_scaling": 1e-4
+# }
 
-e_train_gym = StockTradingEnv(df = train, **env_kwargs)
+e_train_gym = StockTradingEnv(df_to_array(train))
 
 
 # %% [markdown]
@@ -345,7 +360,9 @@ insample_risk_indicator.turbulence.quantile(0.996)
 
 
 # %%
-e_trade_gym = StockTradingEnv(df = trade, turbulence_threshold = 70,risk_indicator_col='vix', **env_kwargs)
+# e_trade_gym = StockTradingEnv(df = trade, turbulence_threshold = 70,risk_indicator_col='vix', **env_kwargs)
+e_trade_gym = StockTradingEnv(df_to_array(trade), turbulence_threshold=70)
+
 
 # %% [markdown]
 # # Part 6: Implement DRL Algorithms
@@ -354,6 +371,7 @@ e_trade_gym = StockTradingEnv(df = trade, turbulence_threshold = 70,risk_indicat
 # ## Training
 
 # %%
+FLAGS.total_steps = 1000
 impala.set_env(e_train_gym)
 impala.train(FLAGS)
 
@@ -399,12 +417,11 @@ perf_stats_all.to_csv("./"+config.RESULTS_DIR+"/perf_stats_all_"+now+'.csv')
 #baseline stats
 print("==============Get Baseline Stats===========")
 baseline_df = get_baseline(
-        ticker="^DJI", 
+        ticker="^DJI",
         start = df_account_value.loc[0,'date'],
         end = df_account_value.loc[len(df_account_value)-1,'date'])
 
 stats = backtest_stats(baseline_df, value_col_name = 'close')
-
 
 
 # %%
@@ -484,5 +501,3 @@ def trx_plot(df_trade, df_actions, tics=None):
         plt.show()
 
 trx_plot(trade, df_actions)
-
-

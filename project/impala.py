@@ -266,7 +266,6 @@ def learn(
             bootstrap_value=bootstrap_value,
         )
 
-        #! Loss incorrect
         pg_loss = compute_policy_gradient_loss(
             learner_outputs["policy_logits"],
             batch["action"],
@@ -282,6 +281,9 @@ def learn(
         total_loss = pg_loss + baseline_loss + entropy_loss
 
         episode_returns = batch["episode_return"][batch["done"]]
+        if len(episode_returns) == 0:
+            episode_returns = torch.tensor([0.])
+
         stats = {
             "episode_returns": tuple(episode_returns.cpu().numpy()),
             "mean_episode_return": torch.mean(episode_returns).item(),
@@ -460,7 +462,7 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "scheduler_state_dict": scheduler.state_dict(),
-                "flags": vars(flags),
+                "flags": {k: getattr(flags, k) for k in dir(flags)}
             },
             checkpointpath,
         )
@@ -509,7 +511,7 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
     plogger.close()
 
 
-def test(flags, num_episodes: int = 10):
+def test(flags):
     if flags.xpid is None:
         checkpointpath = "./latest/model.tar"
     else:
@@ -528,16 +530,13 @@ def test(flags, num_episodes: int = 10):
     episode_total_assets = list()
     episode_total_assets.append(env.initial_total_asset)
     
-    for i in range(env.gym_env.max_step):
+    while True:
         agent_outputs = model(observation)
         policy_outputs, _ = agent_outputs
         observation = env.step(policy_outputs["action"])
 
         total_asset = (
-            env.gym_env.amount
-            + (
-                env.price_ary[env.day] * env.stocks
-            ).sum()
+            env.amount + env.price_ary[env.day] * env.stocks.sum()
         )
         episode_total_assets.append(total_asset)
         episode_return = total_asset / env.initial_total_asset
@@ -555,33 +554,6 @@ def test(flags, num_episodes: int = 10):
     # return episode total_assets on testing data
     print("episode_return", episode_return)
     return episode_total_assets
-
-
-def df_to_array(df, tech_indicator_list, if_vix=True):
-    unique_ticker = df.tic.unique()
-    if_first_time = True
-    for tic in unique_ticker:
-        if if_first_time:
-            price_array = df[df.tic == tic][["adjcp"]].values
-            # price_ary = df[df.tic==tic]['close'].values
-            tech_array = df[df.tic == tic][tech_indicator_list].values
-            if if_vix:
-                turbulence_array = df[df.tic == tic]["vix"].values
-            else:
-                turbulence_array = df[df.tic == tic]["turbulence"].values
-            if_first_time = False
-        else:
-            price_array = np.hstack(
-                [price_array, df[df.tic == tic][["adjcp"]].values]
-            )
-            tech_array = np.hstack(
-                [tech_array, df[df.tic == tic][tech_indicator_list].values]
-            )
-    assert price_array.shape[0] == tech_array.shape[0]
-    assert tech_array.shape[0] == turbulence_array.shape[0]
-    print("Successfully transformed into array")
-    return price_array, tech_array, turbulence_array
-
 
 class ActorNet(nn.Module):
 
@@ -625,7 +597,7 @@ class ActorNet(nn.Module):
             for _ in range(2)
         )
         
-    def forward(self, inputs, core_state=()):
+    def forward(self, inputs, core_state=None):
         x = inputs["frame"]
         T, B, *_ = x.shape
         x = torch.flatten(x, 0, 1).float()
@@ -642,16 +614,16 @@ class ActorNet(nn.Module):
         for input, nd in zip(core_input.unbind(), notdone.unbind()):
             # Reset core state to zero whenever an episode ended.
             # Make `done` broadcastable with (num_layers, B, hidden_size) states
-            core_state = tuple(nd.view(1, -1, 1) * s for s in core_state)
             output, core_state = self.core(input.unsqueeze(0), core_state)
+            core_state = tuple(nd.view(1, -1, 1) * s for s in core_state)
             core_output_list.append(output)
         core_output = torch.flatten(torch.cat(core_output_list), 0, 1)
 
         action_mean = self.net_policy(core_output)
         baseline = self.baseline(core_output)
 
+        action_std = self.net_action_logstd(core_output).clamp(-20, 2).exp()
         if self.training:
-            action_std = self.net_action_logstd(core_output).clamp(-20, 2).exp()
             action = torch.normal(action_mean, action_std).tanh()
         else:
             action = action_mean.tanh()
@@ -708,7 +680,7 @@ class Environment(gym.Wrapper):
         )
 
     def step(self, action):
-        frame, reward, done, _ = self.gym_env.step(action.numpy().squeeze())
+        frame, reward, done, _ = self.gym_env.step(action.detach().numpy().squeeze())
         self.episode_step += 1
         self.episode_return += reward
         episode_step = self.episode_step
