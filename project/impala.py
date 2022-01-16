@@ -24,20 +24,14 @@ import typing
 
 os.environ["OMP_NUM_THREADS"] = "1"  # Necessary for multithreading.
 
-import numpy as np
-
-import gym
 import torch
 from torch import multiprocessing as mp
 from torch import nn
-from torch.nn import functional as F
-from torch.distributions.multivariate_normal import MultivariateNormal
 
 from absl import flags
 
-from torchbeast.torchbeast.core import file_writer
-from torchbeast.torchbeast.core import prof
-from torchbeast.torchbeast.core import vtrace
+from utils import file_writer, prof, vtrace
+from utils.environment import Environment
 
 
 # yapf: disable
@@ -53,11 +47,11 @@ flags.DEFINE_enum("device", default="cuda", enum_values=["cpu", "cuda"], help="D
 # Training settings.
 flags.DEFINE_bool("disable_checkpoint", default=False,
                     help="Disable saving checkpoint.")
-flags.DEFINE_string("savedir", default="~/logs/torchbeast",
+flags.DEFINE_string("savedir", default="impala_logs",
                     help="Root dir where experiment data will be saved.")
 flags.DEFINE_integer("num_actors", default=4, 
                     help="Number of actors (default: 4).")
-flags.DEFINE_integer("total_steps", default=100000,
+flags.DEFINE_integer("total_steps", default=int(1e6),
                     help="Total environment steps to train for.")
 flags.DEFINE_integer("batch_size", default=8, 
                     help="Learner batch size.")
@@ -77,7 +71,7 @@ flags.DEFINE_float("baseline_cost", default=0.5,
                     help="Baseline cost/multiplier.")
 flags.DEFINE_float("discounting", default=0.99,
                     help="Discounting factor.")
-flags.DEFINE_enum("reward_clipping", default="abs_one",
+flags.DEFINE_enum("reward_clipping", default="none",
                     enum_values=["abs_one", "none"],
                     help="Reward clipping.")
 
@@ -281,8 +275,6 @@ def learn(
         total_loss = pg_loss + baseline_loss + entropy_loss
 
         episode_returns = batch["episode_return"][batch["done"]]
-        if len(episode_returns) == 0:
-            episode_returns = torch.tensor([0.])
 
         stats = {
             "episode_returns": tuple(episode_returns.cpu().numpy()),
@@ -413,11 +405,13 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
     ]
     logger.info("# Step\t%s", "\t".join(stat_keys))
 
-    step, stats = 0, {}
+    timer = timeit.default_timer
+    start_step = step = 0
+    start_time = timer()
 
     def batch_and_learn(i, lock=threading.Lock()):
         """Thread target for the learning process."""
-        nonlocal step, stats
+        nonlocal step, start_step, start_time
         timings = prof.Timings()
         while step < flags.total_steps:
             timings.reset()
@@ -438,6 +432,24 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
                 to_log.update({k: stats[k] for k in stat_keys})
                 plogger.log(to_log)
                 step += T * B
+                
+            if stats.get("episode_returns", None):
+                sps = (step - start_step) / (timer() - start_time)
+                start_step = step
+                start_time = timer()
+                
+                mean_return = (
+                    "Return per episode: %.1f. " % stats["mean_episode_return"]
+                )
+                total_loss = stats.get("total_loss", float("inf"))
+                logging.info(
+                    "Steps %i @ %.1f SPS. Loss %f. %sStats:\n%s",
+                    step,
+                    sps,
+                    total_loss,
+                    mean_return,
+                    pprint.pformat(stats),
+                )
 
         if i == 0:
             logging.info("Batch and learn: %s", timings.summary())
@@ -467,34 +479,13 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
             checkpointpath,
         )
 
-    timer = timeit.default_timer
     try:
         last_checkpoint_time = timer()
         while step < flags.total_steps:
-            start_step = step
-            start_time = timer()
             time.sleep(5)
-
             if timer() - last_checkpoint_time > 10 * 60:  # Save every 10 min.
                 checkpoint()
                 last_checkpoint_time = timer()
-
-            sps = (step - start_step) / (timer() - start_time)
-            if stats.get("episode_returns", None):
-                mean_return = (
-                    "Return per episode: %.1f. " % stats["mean_episode_return"]
-                )
-            else:
-                mean_return = ""
-            total_loss = stats.get("total_loss", float("inf"))
-            logging.info(
-                "Steps %i @ %.1f SPS. Loss %f. %sStats:\n%s",
-                step,
-                sps,
-                total_loss,
-                mean_return,
-                pprint.pformat(stats),
-            )
     except KeyboardInterrupt:
         return  # Try joining actors then quit.
     else:
@@ -529,18 +520,18 @@ def test(flags):
     episode_returns = list()  # the cumulative_return / initial_account
     episode_total_assets = list()
     episode_total_assets.append(env.initial_total_asset)
+    episode_actions = list()
     
     while True:
         agent_outputs = model(observation)
         policy_outputs, _ = agent_outputs
-        observation = env.step(policy_outputs["action"])
+        action = policy_outputs["action"]
+        observation = env.step(action)
+        episode_actions.append(env.action_np)
 
-        total_asset = (
-            env.amount + env.price_ary[env.day] * env.stocks.sum()
-        )
-        episode_total_assets.append(total_asset)
-        episode_return = total_asset / env.initial_total_asset
+        episode_return = observation["episode_return"]
         episode_returns.append(episode_return)
+        episode_total_assets.append(episode_return * env.initial_total_asset)
         
         if observation['done'].item():
             logging.info(
@@ -551,8 +542,6 @@ def test(flags):
             break
         
     print("Test Finished!")
-    # return episode total_assets on testing data
-    print("episode_return", episode_return)
     return episode_total_assets
 
 class ActorNet(nn.Module):
@@ -576,14 +565,17 @@ class ActorNet(nn.Module):
             nn.ReLU(),
             nn.Linear(core_out_dim, net_dim),
             nn.Hardswish(),
-            nn.Linear(net_dim, action_dim))
+            nn.Linear(net_dim, action_dim)
+        )
         self.net_action_logstd = nn.Sequential(
             nn.Hardswish(),
             nn.Linear(core_out_dim, action_dim)
         )
         self.baseline = nn.Sequential(
             nn.ReLU(),
-            nn.Linear(core_out_dim, 1)
+            nn.Linear(core_out_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
         )
         
         self.observation_shape = env.observation_space.shape
@@ -642,69 +634,6 @@ class ActorNet(nn.Module):
 
 
 Net = ActorNet
-
-
-class Environment(gym.Wrapper):
-    default_env = None
-    
-    def __init__(self, gym_env):
-        super().__init__(gym_env)
-        self.gym_env = gym_env
-        self.episode_return = None
-        self.episode_step = None
-        
-    @staticmethod
-    def _format_frame(frame):
-        frame = torch.tensor(frame)
-        return frame.view((1, 1) + frame.shape)  # (...) -> (T,B,...).
-    
-    @property
-    def num_actions(self):
-        return self.action_space.shape[-1]
-
-    def initial(self):
-        initial_reward = torch.zeros(1, 1)
-        # This supports only single-tensor actions ATM.
-        initial_last_action = torch.zeros(1, 1, self.num_actions, dtype=torch.int64)
-        self.episode_return = torch.zeros(1, 1)
-        self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
-        initial_done = torch.ones(1, 1, dtype=torch.uint8)
-        initial_frame = self._format_frame(self.gym_env.reset())
-        return dict(
-            frame=initial_frame,
-            reward=initial_reward,
-            done=initial_done,
-            episode_return=self.episode_return,
-            episode_step=self.episode_step,
-            last_action=initial_last_action,
-        )
-
-    def step(self, action):
-        frame, reward, done, _ = self.gym_env.step(action.detach().numpy().squeeze())
-        self.episode_step += 1
-        self.episode_return += reward
-        episode_step = self.episode_step
-        episode_return = self.episode_return
-        if done:
-            frame = self.gym_env.reset()
-            self.episode_return = torch.zeros(1, 1)
-            self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
-
-        frame = self._format_frame(frame)
-        reward = torch.tensor(reward).view(1, 1)
-        done = torch.tensor(done).view(1, 1)
-
-        return dict(
-            frame=frame,
-            reward=reward,
-            done=done,
-            episode_return=episode_return,
-            episode_step=episode_step,
-            last_action=action,
-        )
-
-    def close(self):
-        self.gym_env.close()
 
 
 def create_env(flags):
