@@ -50,8 +50,8 @@ flags.DEFINE_bool("disable_checkpoint", default=False,
 flags.DEFINE_string("savedir", default="impala_logs",
                     help="Root dir where experiment data will be saved.")
 flags.DEFINE_integer("num_actors", default=4, 
-                    help="Number of actors (default: 4).")
-flags.DEFINE_integer("total_steps", default=int(1e6),
+                    help="Number of actors.")
+flags.DEFINE_integer("total_steps", default=int(1e5),
                     help="Total environment steps to train for.")
 flags.DEFINE_integer("batch_size", default=8, 
                     help="Learner batch size.")
@@ -264,10 +264,10 @@ def learn(
             learner_outputs["policy_logits"],
             batch["action"],
             vtrace_returns.pg_advantages,
-        )
+        ) * 1e-3
         baseline_loss = flags.baseline_cost * compute_baseline_loss(
             vtrace_returns.vs - learner_outputs["baseline"]
-        )
+        ) * 1e-3
         entropy_loss = flags.entropy_cost * compute_entropy_loss(
             learner_outputs["policy_logits"]
         )
@@ -305,8 +305,8 @@ def create_buffers(flags, obs_shape, num_actions) -> Buffers:
         episode_step=dict(size=(T + 1,), dtype=torch.int32),
         policy_logits=dict(size=(T + 1, 2 * num_actions), dtype=torch.float32),
         baseline=dict(size=(T + 1,), dtype=torch.float32),
-        last_action=dict(size=(T + 1, num_actions), dtype=torch.int64),
-        action=dict(size=(T + 1, num_actions), dtype=torch.int64),
+        last_action=dict(size=(T + 1, num_actions), dtype=torch.float32),
+        action=dict(size=(T + 1, num_actions), dtype=torch.float32),
     )
     buffers: Buffers = {key: [] for key in specs}
     for _ in range(flags.num_buffers):
@@ -408,10 +408,11 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
     timer = timeit.default_timer
     start_step = step = 0
     start_time = timer()
+    stats = None
 
     def batch_and_learn(i, lock=threading.Lock()):
         """Thread target for the learning process."""
-        nonlocal step, start_step, start_time
+        nonlocal step, stats
         timings = prof.Timings()
         while step < flags.total_steps:
             timings.reset()
@@ -427,6 +428,7 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
                 flags, model, learner_model, batch, agent_state, optimizer, scheduler
             )
             timings.time("learn")
+            
             with lock:
                 to_log = dict(step=step)
                 to_log.update({k: stats[k] for k in stat_keys})
@@ -434,26 +436,28 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
                 step += T * B
                 
             if stats.get("episode_returns", None):
-                sps = (step - start_step) / (timer() - start_time)
-                start_step = step
-                start_time = timer()
-                
-                mean_return = (
-                    "Return per episode: %.1f. " % stats["mean_episode_return"]
-                )
-                total_loss = stats.get("total_loss", float("inf"))
-                logging.info(
-                    "Steps %i @ %.1f SPS. Loss %f. %sStats:\n%s",
-                    step,
-                    sps,
-                    total_loss,
-                    mean_return,
-                    pprint.pformat(stats),
-                )
+                log_stats()
 
         if i == 0:
             logging.info("Batch and learn: %s", timings.summary())
 
+    def log_stats():
+        """Logs training stats."""
+        nonlocal stats, start_step, start_time
+        sps = (step - start_step) / (timer() - start_time)
+        start_step = step
+        start_time = timer()
+        mean_return = "Return per episode: %.1f. " % stats["mean_episode_return"]
+        total_loss = stats.get("total_loss", float("inf"))
+        logging.info(
+            "Steps %i @ %.1f SPS. Loss %f. %sStats:\n%s",
+            step,
+            sps,
+            total_loss,
+            mean_return,
+            pprint.pformat(stats),
+        )
+        
     for m in range(flags.num_buffers):
         free_queue.put(m)
 
@@ -483,6 +487,8 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
         last_checkpoint_time = timer()
         while step < flags.total_steps:
             time.sleep(5)
+            if stats is not None and timer() - start_time >= 5:
+                log_stats()
             if timer() - last_checkpoint_time > 10 * 60:  # Save every 10 min.
                 checkpoint()
                 last_checkpoint_time = timer()
@@ -542,7 +548,8 @@ def test(flags):
             break
         
     print("Test Finished!")
-    return episode_total_assets
+    return episode_total_assets, episode_actions
+
 
 class ActorNet(nn.Module):
 
@@ -567,21 +574,21 @@ class ActorNet(nn.Module):
             nn.Hardswish(),
             nn.Linear(net_dim, action_dim)
         )
-        self.net_action_logstd = nn.Sequential(
-            nn.Hardswish(),
-            nn.Linear(core_out_dim, action_dim)
-        )
+        # self.net_action_logstd = nn.Sequential(
+        #     nn.Hardswish(),
+        #     nn.Linear(core_out_dim, action_dim)
+        # )
         self.baseline = nn.Sequential(
             nn.ReLU(),
-            nn.Linear(core_out_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1)
+            nn.Linear(core_out_dim, 128),
+            nn.Hardswish(),
+            nn.Linear(128, 1)
         )
+        self.action_logstd = torch.nn.Parameter(
+            torch.zeros(action_dim) - 0.5, requires_grad=True)
         
         self.observation_shape = env.observation_space.shape
         self.num_actions = action_dim
-        
-        print(self)
 
     def initial_state(self, batch_size):
         return tuple(
@@ -589,7 +596,7 @@ class ActorNet(nn.Module):
             for _ in range(2)
         )
         
-    def forward(self, inputs, core_state=None):
+    def forward(self, inputs, core_state=None): 
         x = inputs["frame"]
         T, B, *_ = x.shape
         x = torch.flatten(x, 0, 1).float()
@@ -612,9 +619,10 @@ class ActorNet(nn.Module):
         core_output = torch.flatten(torch.cat(core_output_list), 0, 1)
 
         action_mean = self.net_policy(core_output)
+        # action_std = self.net_action_logstd(core_output).clamp(-20, 2).exp()
+        action_std = self.action_logstd.exp().expand(*action_mean.shape)
         baseline = self.baseline(core_output)
 
-        action_std = self.net_action_logstd(core_output).clamp(-20, 2).exp()
         if self.training:
             action = torch.normal(action_mean, action_std).tanh()
         else:

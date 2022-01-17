@@ -50,12 +50,13 @@ VTraceReturns = collections.namedtuple("VTraceReturns", "vs pg_advantages")
 def logits_to_distribution(logits):
     """Convert logits to a distribution."""
     mean, std = torch.chunk(logits, 2, dim=-1)
+    # std = torch.clamp(std, min=0.05)
     return MultivariateNormal(mean, torch.diag_embed(std))
 
 
 def action_log_probs(policy_logits, actions):
     dist = logits_to_distribution(policy_logits)
-    return dist.log_prob(actions)
+    return dist.log_prob(actions.atanh())
 
 
 def from_logits(
@@ -66,8 +67,8 @@ def from_logits(
     rewards,
     values,
     bootstrap_value,
-    clip_rho_threshold=100.0,
-    clip_pg_rho_threshold=100.0,
+    clip_rho_threshold=1.0,
+    clip_pg_rho_threshold=1.0,
 ):
     """V-trace for softmax policies."""
 
@@ -98,8 +99,8 @@ def from_importance_weights(
     rewards,
     values,
     bootstrap_value,
-    clip_rho_threshold=100.0,
-    clip_pg_rho_threshold=100.0,
+    clip_rho_threshold=1.0,
+    clip_pg_rho_threshold=1.0,
 ):
     """V-trace from log importance weights."""
     with torch.no_grad():

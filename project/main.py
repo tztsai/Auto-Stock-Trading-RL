@@ -74,7 +74,6 @@ import datetime
 # %matplotlib inline
 
 from finrl.apps import config
-from finrl.finrl_meta.preprocessor.yahoodownloader import YahooDownloader
 from finrl.finrl_meta.preprocessor.preprocessors import FeatureEngineer, data_split
 from finrl.finrl_meta.env_stock_trading.env_stocktrading_np import StockTradingEnv
 # from drl_agents.stablebaselines3.models import DRLAgent
@@ -95,7 +94,6 @@ import itertools
 import logging
 
 logging.basicConfig(level=logging.INFO)
-
 
 # %% [markdown]
 #  <a id='1.4'></a>
@@ -147,15 +145,12 @@ if not os.path.exists("./" + config.RESULTS_DIR):
 # from config.py start_date is a string
 config.START_DATE
 
-
 # %%
 # from config.py end_date is a string
 config.END_DATE
 
-
 # %%
 print(config.DOW_30_TICKER)
-
 
 # %%
 data_filename = 'processed_data.csv'
@@ -166,37 +161,35 @@ if os.path.exists(data_path):
 else:
     data = None
 
-
 # %%
 if data is None:
-    import yfinance as yf
-    df = pd.DataFrame()
-    for tic in config.DOW_30_TICKER:
-        temp_df = yf.download(tic, start='2009-01-01', end='2021-12-31')
-        temp_df["tic"] = tic
-        df = df.append(temp_df)
-    df = df.reset_index()
-    df.columns = [
-        "date",
-        "open",
-        "high",
-        "low",
-        "close",
-        "adjcp",
-        "volume",
-        "tic",
-    ]
+  import yfinance as yf
+  data_df = pd.DataFrame()
+  for tic in config.DOW_30_TICKER:
+      temp_df = yf.download(tic, start='2009-01-01', end='2021-12-31')
+      temp_df["tic"] = tic
+      data_df = data_df.append(temp_df)
 
+  data_df = data_df.reset_index()
+  data_df.columns = [
+      "date", "open",
+      "high", "low",
+      "close", "adjcp",
+      "volume", "tic",
+  ]
 
-# %%
-if data is None:
-  df.shape
+  # create day of the week column (monday = 0)
+  data_df["day"] = data_df["date"].dt.dayofweek
+  # convert date to standard string format, easy to filter
+  data_df["date"] = data_df.date.apply(lambda x: x.strftime("%Y-%m-%d"))
+  # drop missing data
+  data_df = data_df.dropna()
+  data_df = data_df.reset_index(drop=True)
+  print("Shape of DataFrame: ", data_df.shape)
+  # print("Display DataFrame: ", data_df.head())
 
-
-# %%
-if data is None:
-  df.sort_values(['date','tic'],ignore_index=True).head()
-
+  data_df = data_df.sort_values(
+      by=["date", "tic"]).reset_index(drop=True)
 
 # %% [markdown]
 #  # Part 4: Preprocess Data
@@ -213,10 +206,8 @@ if data is None:
         use_turbulence=True,
         user_defined_feature = False)
 
-    processed = fe.preprocess_data(df)
-
-# %%
-if data is None:
+    processed = fe.preprocess_data(data_df)
+    
     list_ticker = processed["tic"].unique().tolist()
     list_date = list(pd.date_range(processed['date'].min(),processed['date'].max()).astype(str))
     combination = list(itertools.product(list_date,list_ticker))
@@ -230,12 +221,9 @@ if data is None:
     
 else:
     processed_full = data
-    
 
-# %%
 processed_full['date'] = pd.to_datetime(processed_full['date'])
-processed_full.sort_values(['date','tic'],ignore_index=True).head(10)
-
+processed_full.head(10)
 
 # %% [markdown]
 #  <a id='4'></a>
@@ -246,34 +234,25 @@ processed_full.sort_values(['date','tic'],ignore_index=True).head(10)
 # 
 #  The action space describes the allowed actions that the agent interacts with the environment. Normally, action a includes three actions: {-1, 0, 1}, where -1, 0, 1 represent selling, holding, and buying one share. Also, an action can be carried upon multiple shares. We use an action space {-k,…,-1, 0, 1, …, k}, where k denotes the number of shares to buy and -k denotes the number of shares to sell. For example, "Buy 10 shares of AAPL" or "Sell 10 shares of AAPL" are 10 or -10, respectively. The continuous action space needs to be normalized to [-1, 1], since the policy is defined on a Gaussian distribution, which needs to be normalized and symmetric.
 
-# %% [markdown]
-#  ## Training data split: 2009-01-01 to 2020-07-01
-#  ## Trade data split: 2020-07-01 to 2021-10-31
-
 # %%
 train = data_split(processed_full, '2009-01-01','2020-07-01')
 trade = data_split(processed_full, '2020-07-01','2021-10-31')
 print(len(train))
 print(len(trade))
 
-
 # %%
 train.tail()
-
 
 # %%
 trade.head()
 
-
 # %%
 config.TECHNICAL_INDICATORS_LIST
-
 
 # %%
 stock_dimension = len(train.tic.unique())
 state_space = 1 + 2*stock_dimension + len(config.TECHNICAL_INDICATORS_LIST)*stock_dimension
 print(f"Stock Dimension: {stock_dimension}, State Space: {state_space}")
-
 
 # %%
 def df_to_array(df, tech_indicator_list=None, if_vix=True):
@@ -312,22 +291,13 @@ def df_to_array(df, tech_indicator_list=None, if_vix=True):
 # %% [markdown]
 #  ## Environment for Training
 # 
-# 
 
 # %%
-# env_config = {
-#     "hmax": 100, 
-#     "initial_account": 1000000, 
-#     "buy_cost_pct": 0.001,
-#     "sell_cost_pct": 0.001,
-#     "state_space": state_space, 
-#     "stock_dim": stock_dimension, 
-#     "tech_indicator_list": config.TECHNICAL_INDICATORS_LIST, 
-#     "action_space": stock_dimension, 
-#     "reward_scaling": 1e-4
-# }
-
-e_train_gym = StockTradingEnv(df_to_array(train))
+e_train_cfg = dict(
+    if_train = True,
+    **df_to_array(train)
+)
+e_train_gym = StockTradingEnv(e_train_cfg, min_stock_rate=0.01)
 
 
 # %% [markdown]
@@ -342,27 +312,24 @@ e_train_gym = StockTradingEnv(df_to_array(train))
 data_risk_indicator = processed_full[(processed_full.date<'2020-07-01') & (processed_full.date>='2009-01-01')]
 insample_risk_indicator = data_risk_indicator.drop_duplicates(subset=['date'])
 
-
 # %%
 insample_risk_indicator.vix.describe()
-
 
 # %%
 insample_risk_indicator.vix.quantile(0.996)
 
-
 # %%
 insample_risk_indicator.turbulence.describe()
-
 
 # %%
 insample_risk_indicator.turbulence.quantile(0.996)
 
-
 # %%
-# e_trade_gym = StockTradingEnv(df = trade, turbulence_threshold = 70,risk_indicator_col='vix', **env_kwargs)
-e_trade_gym = StockTradingEnv(df_to_array(trade), turbulence_threshold=70)
-
+e_trade_cfg = dict(
+    if_train = False,
+    **df_to_array(trade)
+)
+e_trade_gym = StockTradingEnv(e_trade_cfg, min_stock_rate=0.01)
 
 # %% [markdown]
 # # Part 6: Implement DRL Algorithms
@@ -371,7 +338,6 @@ e_trade_gym = StockTradingEnv(df_to_array(trade), turbulence_threshold=70)
 # ## Training
 
 # %%
-FLAGS.total_steps = 1000
 impala.set_env(e_train_gym)
 impala.train(FLAGS)
 
@@ -384,14 +350,10 @@ impala.train(FLAGS)
 
 # %%
 impala.set_env(e_trade_gym)
-df_account_value, df_actions = impala.test(FLAGS)
-
-# %%
-df_account_value.shape
-
-# %%
-df_account_value.tail()
-
+account_values, actions = impala.test(FLAGS)
+df_account_value = pd.DataFrame(dict(date=trade.date[~trade.date.duplicated(keep='last')],
+                                     account_value=account_values))
+df_account_value
 
 # %% [markdown]
 #  <a id='6'></a>
@@ -412,7 +374,6 @@ perf_stats_all = backtest_stats(account_value=df_account_value)
 perf_stats_all = pd.DataFrame(perf_stats_all)
 perf_stats_all.to_csv("./"+config.RESULTS_DIR+"/perf_stats_all_"+now+'.csv')
 
-
 # %%
 #baseline stats
 print("==============Get Baseline Stats===========")
@@ -423,14 +384,11 @@ baseline_df = get_baseline(
 
 stats = backtest_stats(baseline_df, value_col_name = 'close')
 
-
 # %%
 df_account_value.loc[0,'date']
 
-
 # %%
 df_account_value.loc[len(df_account_value)-1,'date']
-
 
 # %% [markdown]
 #  <a id='6.2'></a>
@@ -447,10 +405,15 @@ backtest_plot(df_account_value,
              baseline_start = df_account_value.loc[0,'date'],
              baseline_end = df_account_value.loc[len(df_account_value)-1,'date'])
 
-
 # %% [markdown]
 # <a id='6.3'></a>
 # ## 7.3 TransactionPlot
+
+# %%
+df_actions = pd.DataFrame(actions,
+                          index=df_account_value.date[:-1],
+                          columns=trade.tic.unique())
+df_actions.head()
 
 # %%
 def trx_plot(df_trade, df_actions, tics=None):
@@ -482,7 +445,7 @@ def trx_plot(df_trade, df_actions, tics=None):
             markersize=10,
             color="m",
             label="buying signal",
-            markevery=buying_signal,
+            markevery=list(buying_signal),
         )
         plt.plot(
             tic_plot,
@@ -490,7 +453,7 @@ def trx_plot(df_trade, df_actions, tics=None):
             markersize=10,
             color="k",
             label="selling signal",
-            markevery=selling_signal,
+            markevery=list(selling_signal),
         )
         plt.title(
             f"{df_trx_temp.name} Num Transactions: {len(buying_signal[buying_signal==True]) + len(selling_signal[selling_signal==True])}"
@@ -500,4 +463,4 @@ def trx_plot(df_trade, df_actions, tics=None):
         plt.xticks(rotation=45, ha="right")
         plt.show()
 
-trx_plot(trade, df_actions)
+# trx_plot(trade, df_actions)
