@@ -40,8 +40,6 @@
 
 # %%
 # !pip install git+https://github.com/AI4Finance-LLC/FinRL-Library.git
-# !git clone https://github.com/facebookresearch/torchbeast.git
-# !pip install -r torchbeast/requirements.txt
 
 # %% [markdown]
 # 

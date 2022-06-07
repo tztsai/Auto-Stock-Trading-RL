@@ -31,6 +31,7 @@ import collections
 
 import torch
 from torch.distributions.multivariate_normal import MultivariateNormal
+from torch.distributions.normal import Normal
 
 
 VTraceFromLogitsReturns = collections.namedtuple(
@@ -50,13 +51,14 @@ VTraceReturns = collections.namedtuple("VTraceReturns", "vs pg_advantages")
 def logits_to_distribution(logits):
     """Convert logits to a distribution."""
     mean, std = torch.chunk(logits, 2, dim=-1)
-    # std = torch.clamp(std, min=0.05)
     return MultivariateNormal(mean, torch.diag_embed(std))
+    # return Normal(mean, std)
 
 
 def action_log_probs(policy_logits, actions):
     dist = logits_to_distribution(policy_logits)
-    return dist.log_prob(actions.atanh())
+    actions = torch.clamp(actions, -0.99, 0.99).atanh()
+    return dist.log_prob(actions)
 
 
 def from_logits(

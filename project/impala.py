@@ -53,7 +53,7 @@ flags.DEFINE_integer("num_actors", default=4,
                     help="Number of actors.")
 flags.DEFINE_integer("total_steps", default=int(1e5),
                     help="Total environment steps to train for.")
-flags.DEFINE_integer("batch_size", default=8, 
+flags.DEFINE_integer("batch_size", default=8,
                     help="Learner batch size.")
 flags.DEFINE_integer("unroll_length", default=80, 
                     help="The unroll length (time dimension).")
@@ -65,7 +65,7 @@ flags.DEFINE_bool("disable_cuda", default=False,
                     help="Disable CUDA.")
 
 # Loss settings.
-flags.DEFINE_float("entropy_cost", default=0.0006,
+flags.DEFINE_float("entropy_cost", default=0.0008,
                     help="Entropy cost/multiplier.")
 flags.DEFINE_float("baseline_cost", default=0.5,
                     help="Baseline cost/multiplier.")
@@ -76,7 +76,7 @@ flags.DEFINE_enum("reward_clipping", default="none",
                     help="Reward clipping.")
 
 # Optimizer settings.
-flags.DEFINE_float("learning_rate", default=0.00048,
+flags.DEFINE_float("learning_rate", default=5e-4,
                     help="Learning rate.")
 flags.DEFINE_float("alpha", default=0.99,
                     help="RMSProp smoothing constant.")
@@ -264,10 +264,10 @@ def learn(
             learner_outputs["policy_logits"],
             batch["action"],
             vtrace_returns.pg_advantages,
-        ) * 1e-3
+        )
         baseline_loss = flags.baseline_cost * compute_baseline_loss(
             vtrace_returns.vs - learner_outputs["baseline"]
-        ) * 1e-3
+        )
         entropy_loss = flags.entropy_cost * compute_entropy_loss(
             learner_outputs["policy_logits"]
         )
@@ -317,7 +317,7 @@ def create_buffers(flags, obs_shape, num_actions) -> Buffers:
 
 def train(flags):  # pylint: disable=too-many-branches, too-many-statements
     if flags.xpid is None:
-        flags.xpid = "torchbeast-%s" % time.strftime("%Y%m%d-%H%M%S")
+        flags.xpid = "impala-%s" % time.strftime("%Y%m%d-%H%M%S")
     plogger = file_writer.FileWriter(
         xpid=flags.xpid,
         xp_args=dict([k, getattr(flags, k)] for k in dir(flags)),
@@ -409,6 +409,8 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
     start_step = step = 0
     start_time = timer()
     stats = None
+    best_return = 0.
+    make_ckpt = False
 
     def batch_and_learn(i, lock=threading.Lock()):
         """Thread target for the learning process."""
@@ -437,6 +439,7 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
                 
             if stats.get("episode_returns", None):
                 log_stats()
+                checkpoint()
 
         if i == 0:
             logging.info("Batch and learn: %s", timings.summary())
@@ -444,11 +447,17 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
     def log_stats():
         """Logs training stats."""
         nonlocal stats, start_step, start_time
+        nonlocal best_return, make_ckpt
         sps = (step - start_step) / (timer() - start_time)
         start_step = step
         start_time = timer()
         mean_return = "Return per episode: %.1f. " % stats["mean_episode_return"]
         total_loss = stats.get("total_loss", float("inf"))
+        if stats["mean_episode_return"] > best_return:
+          best_return = stats["mean_episode_return"]
+          make_ckpt = True
+        else:
+          make_ckpt = False
         logging.info(
             "Steps %i @ %.1f SPS. Loss %f. %sStats:\n%s",
             step,
@@ -470,7 +479,7 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
         threads.append(thread)
 
     def checkpoint():
-        if flags.disable_checkpoint:
+        if flags.disable_checkpoint:# or not make_ckpt:
             return
         logging.info("Saving checkpoint to %s", checkpointpath)
         torch.save(
@@ -484,14 +493,10 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
         )
 
     try:
-        last_checkpoint_time = timer()
         while step < flags.total_steps:
             time.sleep(5)
             if stats is not None and timer() - start_time >= 5:
                 log_stats()
-            if timer() - last_checkpoint_time > 10 * 60:  # Save every 10 min.
-                checkpoint()
-                last_checkpoint_time = timer()
     except KeyboardInterrupt:
         return  # Try joining actors then quit.
     else:
@@ -574,18 +579,18 @@ class ActorNet(nn.Module):
             nn.Hardswish(),
             nn.Linear(net_dim, action_dim)
         )
-        # self.net_action_logstd = nn.Sequential(
-        #     nn.Hardswish(),
-        #     nn.Linear(core_out_dim, action_dim)
-        # )
+        self.net_action_logstd = nn.Sequential(
+            nn.Hardswish(),
+            nn.Linear(core_out_dim, action_dim)
+        )
         self.baseline = nn.Sequential(
             nn.ReLU(),
             nn.Linear(core_out_dim, 128),
             nn.Hardswish(),
             nn.Linear(128, 1)
         )
-        self.action_logstd = torch.nn.Parameter(
-            torch.zeros(action_dim) - 0.5, requires_grad=True)
+        # self.action_logstd = torch.nn.Parameter(
+        #     torch.zeros(action_dim)-0.5, requires_grad=True)
         
         self.observation_shape = env.observation_space.shape
         self.num_actions = action_dim
@@ -619,8 +624,8 @@ class ActorNet(nn.Module):
         core_output = torch.flatten(torch.cat(core_output_list), 0, 1)
 
         action_mean = self.net_policy(core_output)
-        # action_std = self.net_action_logstd(core_output).clamp(-20, 2).exp()
-        action_std = self.action_logstd.exp().expand(*action_mean.shape)
+        action_std = self.net_action_logstd(core_output).clamp(-8, 2).exp()
+        # action_std = self.action_logstd.exp().expand(*action_mean.shape)
         baseline = self.baseline(core_output)
 
         if self.training:
