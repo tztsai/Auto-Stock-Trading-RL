@@ -1,8 +1,5 @@
-.ipynb_checkpoints/
+datasets/
+*logs/
 *.pyc
-*.pdf
+*.so
 *.zip
-*.gz
-*.bin
-model_cache/
-vocab.txt
